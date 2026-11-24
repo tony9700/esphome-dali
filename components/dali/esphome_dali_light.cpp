@@ -237,51 +237,18 @@ void dali::DaliLight::write_state(light::LightState *state) {
 }
 
 void DaliLight::write_primary_n_(light::LightState *state) {
-    const uint32_t started = millis();
     bool on;
     state->current_values_as_binary(&on);
-    if (!on) {
-        bus->dali.lamp.setBrightness(address_, 0);
-        primary_n_initialized_ = false;
-        bus->record_update_time(millis() - started);
-        return;
+    uint16_t levels[4]{0, 0, 0, 0};
+    if (on) {
+        float values[4];
+        state->current_values_as_rgbw(&values[0], &values[1], &values[2], &values[3]);
+        for (uint8_t i = 0; i < 4; ++i) {
+            float value = values[i];
+            if (value < 0.0f) value = 0.0f;
+            if (value > 1.0f) value = 1.0f;
+            levels[i] = static_cast<uint16_t>(value * 65534.0f + 0.5f);
+        }
     }
-
-    float values[4];
-    state->current_values_as_rgbw(&values[0], &values[1], &values[2], &values[3]);
-    const uint8_t command_address = (address_ << 1) | 1;
-    auto send = [&](uint8_t addr, uint8_t data) {
-        bus->sendForwardFrame(addr, data);
-        // Keep a conservative inter-frame pause on top of the port's stop/idle delay.
-        delay(10);
-    };
-
-    bool changed = false;
-    for (uint8_t channel = 0; channel < 4; channel++) {
-        float value = values[channel];
-        if (value < 0.0f) value = 0.0f;
-        if (value > 1.0f) value = 1.0f;
-        const uint16_t level = static_cast<uint16_t>(value * 65534.0f + 0.5f);
-        if (primary_n_initialized_ && primary_n_last_[channel] == level)
-            continue;
-        send(0xA3, level & 0xFF);
-        send(0xC3, level >> 8);
-        send(0xC5, channel);
-        send(0xC1, 0x08);
-        send(command_address, 0xEA);
-        primary_n_last_[channel] = level;
-        changed = true;
-    }
-    if (changed) {
-        send(0xC1, 0x08);
-        send(command_address, 0xE2);
-        ESP_LOGD(TAG, "Primary N RGBW: %u %u %u %u",
-                 (unsigned) primary_n_last_[0], (unsigned) primary_n_last_[1],
-                 (unsigned) primary_n_last_[2], (unsigned) primary_n_last_[3]);
-    }
-    if (!primary_n_initialized_)
-        bus->dali.lamp.setBrightness(address_, 254);
-    if (changed || !primary_n_initialized_)
-        bus->record_update_time(millis() - started);
-    primary_n_initialized_ = true;
+    bus->queue_primary_n(address_, on, levels);
 }
