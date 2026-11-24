@@ -50,6 +50,15 @@ public:
     }
 
     DaliMaster dali;
+#ifdef USE_GEAS_DALI_RMT
+    void set_rmt_config(int tx, int rx, bool invert_tx, bool invert_rx) {
+        rmt_requested_ = true;
+        rmt_tx_gpio_ = tx; rmt_rx_gpio_ = rx;
+        rmt_invert_tx_ = invert_tx; rmt_invert_rx_ = invert_rx;
+    }
+#endif
+    bool is_rmt_active() const { return rmt_handle_ != nullptr; }
+    uint32_t get_transport_errors() const { return transport_errors_; }
     void queue_primary_n(uint8_t address, bool on, const uint16_t *levels);
     bool is_busy() const { return active_ || !pending_.empty(); }
     uint32_t get_queue_length() const { return active_ ? frames_.size() - frame_index_ : 0; }
@@ -70,6 +79,7 @@ public:
         update_time_ = max_update_time_ = completed_ = superseded_ = 0;
         update_sum_ = 0;
         frames_saved_ = last_frames_saved_ = 0;
+        transport_errors_ = 0;
         peak_queue_length_ = last_frame_count_ = last_queue_wait_ = last_tx_duration_ = 0;
         return true;
     }
@@ -114,6 +124,15 @@ private:
     bool last_valid_{false};
     bool active_{false};
     bool queue_sending_{false};
+    bool transport_ok_{true};
+    uint32_t transport_errors_{0};
+    void *rmt_handle_{nullptr};
+#ifdef USE_GEAS_DALI_RMT
+    bool rmt_requested_{false};
+    int rmt_tx_gpio_{-1}, rmt_rx_gpio_{-1};
+    bool rmt_invert_tx_{true}, rmt_invert_rx_{true};
+    int rmt_reply_{-1};
+#endif
     bool dtr_optimization_{false};
     bool invalidate_after_active_{false};
     uint32_t frames_saved_{0};
