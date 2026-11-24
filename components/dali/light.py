@@ -29,6 +29,7 @@ DALI_COLOR_MODES = {
     "AUTO": DaliColorMode.AUTO,
     "ON_OFF": DaliColorMode.ON_OFF,
     "BRIGHTNESS": DaliColorMode.BRIGHTNESS,
+    "RGBW_PRIMARY_N": DaliColorMode.RGBW_PRIMARY_N,
     "COLOR_TEMPERATURE": DaliColorMode.COLOR_TEMPERATURE,
 }
 
