@@ -237,11 +237,13 @@ void dali::DaliLight::write_state(light::LightState *state) {
 }
 
 void DaliLight::write_primary_n_(light::LightState *state) {
+    const uint32_t started = millis();
     bool on;
     state->current_values_as_binary(&on);
     if (!on) {
         bus->dali.lamp.setBrightness(address_, 0);
         primary_n_initialized_ = false;
+        bus->record_update_time(millis() - started);
         return;
     }
 
@@ -250,7 +252,8 @@ void DaliLight::write_primary_n_(light::LightState *state) {
     const uint8_t command_address = (address_ << 1) | 1;
     auto send = [&](uint8_t addr, uint8_t data) {
         bus->sendForwardFrame(addr, data);
-        delay(15);
+        // Keep a conservative inter-frame pause on top of the port's stop/idle delay.
+        delay(10);
     };
 
     bool changed = false;
@@ -278,5 +281,7 @@ void DaliLight::write_primary_n_(light::LightState *state) {
     }
     if (!primary_n_initialized_)
         bus->dali.lamp.setBrightness(address_, 254);
+    if (changed || !primary_n_initialized_)
+        bus->record_update_time(millis() - started);
     primary_n_initialized_ = true;
 }
