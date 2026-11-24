@@ -153,7 +153,7 @@ light::LightTraits dali::DaliLight::get_traits() {
         switch (this->color_mode_.value()) {
             case DaliColorMode::RGBW_PRIMARY_N:
                 this->tc_supported_ = false;
-                traits.set_supported_color_modes({light::ColorMode::RGBW});
+                traits.set_supported_color_modes({light::ColorMode::RGB_WHITE});
                 break;
             case DaliColorMode::COLOR_TEMPERATURE: 
                 this->tc_supported_ = true;
