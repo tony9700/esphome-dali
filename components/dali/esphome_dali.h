@@ -50,12 +50,27 @@ public:
 
     DaliMaster dali;
 
+    uint32_t get_tx_count() const { return tx_count_; }
+    uint32_t get_rx_count() const { return rx_count_; }
+    uint32_t get_rx_timeout_count() const { return rx_timeout_count_; }
+    uint32_t get_update_time() const { return update_time_; }
+    uint32_t get_max_update_time() const { return max_update_time_; }
+    void record_update_time(uint32_t elapsed) {
+        update_time_ = elapsed;
+        if (elapsed > max_update_time_) max_update_time_ = elapsed;
+    }
+
 public: // DaliPort
     void resetBus() override;
     void sendForwardFrame(uint8_t address, uint8_t data) override;
     uint8_t receiveBackwardFrame(unsigned long timeout_ms = 100) override;
 
 private:
+    uint32_t tx_count_{0};
+    uint32_t rx_count_{0};
+    uint32_t rx_timeout_count_{0};
+    uint32_t update_time_{0};
+    uint32_t max_update_time_{0};
     void writeBit(bool bit);
     void writeByte(uint8_t b);
     uint8_t readByte();
