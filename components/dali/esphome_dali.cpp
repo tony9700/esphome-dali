@@ -174,7 +174,7 @@ void DaliBusComponent::create_light_component(short_addr_t short_addr, uint32_t 
     char* name = new char[MAX_STR_LEN];
     char* id = new char[MAX_STR_LEN];
     snprintf(name, MAX_STR_LEN, "DALI Light %d", short_addr);
-    snprintf(id, MAX_STR_LEN, "dali_light_%.6x", long_addr);
+    snprintf(id, MAX_STR_LEN, "dali_light_%.6lx", static_cast<unsigned long>(long_addr));
     // NOTE: Not freeing these strings, they will be owned by LightState.
 
     auto* light_state = new DynamicDaliLightState { dali_light };
@@ -184,8 +184,8 @@ void DaliBusComponent::create_light_component(short_addr_t short_addr, uint32_t 
     App.register_light(light_state);
     static_cast<AppRegistrationAccessor&>(App).register_component_(light_state);
 
-    light_state->set_restore_mode(light::LIGHT_RESTORE_DEFAULT_ON);
-    light_state->add_effects({});
+    // TODO: Migrate dynamic light restore configuration to ESPHome 2026.11 API.
+    // No effects are registered for this test revision.
 
     // Initialize the DaliLight with the LightState:
     // queries device capabilities (min/max level, color temperature support)
