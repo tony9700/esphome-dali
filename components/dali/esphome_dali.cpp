@@ -266,6 +266,7 @@ void DaliBusComponent::resetBus() {
 }
 
 void DaliBusComponent::sendForwardFrame(uint8_t address, uint8_t data) {
+    ++tx_count_;
     if (DEBUG_LOG_RXTX) {
         DALI_LOGD("TX: %02x %02x", address, data);
         delayMicroseconds(BIT_PERIOD*8);
@@ -296,6 +297,7 @@ uint8_t DaliBusComponent::receiveBackwardFrame(unsigned long timeout_ms) {
     // TODO: Need a better way to wait for this that doesn't block the CPU
     while (m_rxPin->digital_read() == LOW) {
         if (millis() - startTime >= timeout_ms) {
+            ++rx_timeout_count_;
             if (DEBUG_LOG_RXTX) {
                 DALI_LOGD("RX: 00 (NACK)");
             }
@@ -319,5 +321,6 @@ uint8_t DaliBusComponent::receiveBackwardFrame(unsigned long timeout_ms) {
 
     // Minimum time before we can send another forward frame
     delayMicroseconds(BIT_PERIOD*8); 
+    ++rx_count_;
     return data;
 }
