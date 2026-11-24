@@ -206,6 +206,7 @@ void DaliBusComponent::loop() {
         light->loop();
     }
     service_primary_();
+    if (!is_busy()) high_freq_.stop();
 }
 
 void DaliBusComponent::dump_config() {
@@ -343,6 +344,7 @@ void DaliBusComponent::queue_primary_n(uint8_t address, bool on, const uint16_t 
         }
     }
     pending_.push_back(request);
+    high_freq_.start();
 }
 
 void DaliBusComponent::start_primary_() {
