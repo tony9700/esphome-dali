@@ -8,6 +8,10 @@ import esphome.config_validation as cv
 
 AUTO_LOAD = ["light", "output"]
 
+CONF_DRIVER = 'driver'
+CONF_RMT_INVERT_TX = 'rmt_invert_tx'
+CONF_RMT_INVERT_RX = 'rmt_invert_rx'
+
 CONF_DALI_BUS = 'dali_bus'
 CONF_INITIALIZE_ADDRESSES = 'initialize_addresses'
 
@@ -16,6 +20,9 @@ dali_lib_ns = cg.global_ns
 DaliBusComponent = dali_ns.class_('DaliBusComponent', cg.Component)
 
 CONFIG_SCHEMA = cv.Schema({
+    cv.Optional(CONF_DRIVER, default='bitbang'): cv.one_of('bitbang', 'rmt', lower=True),
+    cv.Optional(CONF_RMT_INVERT_TX, default=True): cv.boolean,
+    cv.Optional(CONF_RMT_INVERT_RX, default=True): cv.boolean,
     cv.GenerateID(): cv.declare_id(DaliBusComponent),
     cv.Required(CONF_RX_PIN): pins.gpio_input_pin_schema,
     cv.Required(CONF_TX_PIN): pins.gpio_output_pin_schema,
@@ -32,6 +39,15 @@ async def to_code(config: OrderedDict):
     
     tx_pin = await cg.gpio_pin_expression(config[CONF_TX_PIN])
     cg.add(var.set_tx_pin(tx_pin))
+
+    if config[CONF_DRIVER] == 'rmt':
+        if not CORE.using_esp_idf:
+            raise cv.Invalid('DALI RMT requires ESP-IDF')
+        from esphome.components import esp32
+        esp32.add_idf_component(name='espressif/dali', ref='1.1.0')
+        cg.add_define('USE_GEAS_DALI_RMT')
+        cg.add(var.set_rmt_config(config[CONF_TX_PIN]['number'], config[CONF_RX_PIN]['number'],
+                                  config[CONF_RMT_INVERT_TX], config[CONF_RMT_INVERT_RX]))
 
     if config.get(CONF_DISCOVERY, False):
         cg.add(var.do_device_discovery())
