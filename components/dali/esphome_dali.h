@@ -57,6 +57,21 @@ public:
     uint32_t get_updates_superseded() const { return superseded_; }
     uint32_t get_average_update_time() const { return completed_ ? update_sum_ / completed_ : 0; }
 
+    void set_inter_frame_delay(uint32_t ms) { inter_frame_delay_ = ms > 20 ? 20 : ms < 2 ? 2 : ms; }
+    uint32_t get_inter_frame_delay() const { return inter_frame_delay_; }
+    uint32_t get_peak_queue_length() const { return peak_queue_length_; }
+    uint32_t get_last_frame_count() const { return last_frame_count_; }
+    uint32_t get_last_queue_wait() const { return last_queue_wait_; }
+    uint32_t get_last_tx_duration() const { return last_tx_duration_; }
+    bool reset_statistics() {
+        if (is_busy()) return false;
+        tx_count_ = rx_count_ = rx_timeout_count_ = 0;
+        update_time_ = max_update_time_ = completed_ = superseded_ = 0;
+        update_sum_ = 0;
+        peak_queue_length_ = last_frame_count_ = last_queue_wait_ = last_tx_duration_ = 0;
+        return true;
+    }
+
     uint32_t get_tx_count() const { return tx_count_; }
     uint32_t get_rx_count() const { return rx_count_; }
     uint32_t get_rx_timeout_count() const { return rx_timeout_count_; }
@@ -89,6 +104,14 @@ private:
     bool queue_sending_{false};
     size_t frame_index_{0};
     uint32_t next_frame_at_{0};
+    uint32_t inter_frame_delay_{10};
+    uint32_t active_frame_delay_{10};
+    uint32_t peak_queue_length_{0};
+    uint32_t last_frame_count_{0};
+    uint32_t last_queue_wait_{0};
+    uint32_t last_tx_duration_{0};
+    uint32_t tx_started_{0};
+    uint32_t active_queue_wait_{0};
     uint32_t completed_{0};
     uint32_t superseded_{0};
     uint64_t update_sum_{0};
