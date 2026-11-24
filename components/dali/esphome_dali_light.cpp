@@ -29,6 +29,10 @@ void DaliLight::initial_state_trampoline(LightStateRTCState &s) {
 }
 
 void dali::DaliLight::setup_state(light::LightState *state) {
+    if (color_mode_.has_value() && color_mode_.value() == DaliColorMode::RGBW_PRIMARY_N) {
+        ESP_LOGI(TAG, "Primary N RGBW: channels 0,1,2,3");
+        return;
+    }
     // Initialization code for DaliLight
 
     // Exclude broadcast and group addresses
@@ -147,6 +151,10 @@ light::LightTraits dali::DaliLight::get_traits() {
     // or force colour temperature support and hope the device recognizes the command...
     if (this->color_mode_.has_value()) {
         switch (this->color_mode_.value()) {
+            case DaliColorMode::RGBW_PRIMARY_N:
+                this->tc_supported_ = false;
+                traits.set_supported_color_modes({light::ColorMode::RGBW});
+                break;
             case DaliColorMode::COLOR_TEMPERATURE: 
                 this->tc_supported_ = true;
                 traits.set_supported_color_modes({light::ColorMode::COLOR_TEMPERATURE});
@@ -179,6 +187,10 @@ light::LightTraits dali::DaliLight::get_traits() {
 }
 
 void dali::DaliLight::write_state(light::LightState *state) {
+    if (color_mode_.has_value() && color_mode_.value() == DaliColorMode::RGBW_PRIMARY_N) {
+        write_primary_n_(state);
+        return;
+    }
     bool on;
     float brightness;
     float color_temperature;
@@ -222,4 +234,49 @@ void dali::DaliLight::write_state(light::LightState *state) {
 
     ESP_LOGD(TAG, "DALI[%d] B=%.2f (%d)", address_, brightness, dali_brightness);
     bus->dali.lamp.setBrightness(address_, (uint8_t)dali_brightness);
+}
+
+void DaliLight::write_primary_n_(light::LightState *state) {
+    bool on;
+    state->current_values_as_binary(&on);
+    if (!on) {
+        bus->dali.lamp.setBrightness(address_, 0);
+        primary_n_initialized_ = false;
+        return;
+    }
+
+    float values[4];
+    state->current_values_as_rgbw(&values[0], &values[1], &values[2], &values[3]);
+    const uint8_t command_address = (address_ << 1) | 1;
+    auto send = [&](uint8_t addr, uint8_t data) {
+        bus->sendForwardFrame(addr, data);
+        delay(15);
+    };
+
+    bool changed = false;
+    for (uint8_t channel = 0; channel < 4; channel++) {
+        float value = values[channel];
+        if (value < 0.0f) value = 0.0f;
+        if (value > 1.0f) value = 1.0f;
+        const uint16_t level = static_cast<uint16_t>(value * 65534.0f + 0.5f);
+        if (primary_n_initialized_ && primary_n_last_[channel] == level)
+            continue;
+        send(0xA3, level & 0xFF);
+        send(0xC3, level >> 8);
+        send(0xC5, channel);
+        send(0xC1, 0x08);
+        send(command_address, 0xEA);
+        primary_n_last_[channel] = level;
+        changed = true;
+    }
+    if (changed) {
+        send(0xC1, 0x08);
+        send(command_address, 0xE2);
+        ESP_LOGD(TAG, "Primary N RGBW: %u %u %u %u",
+                 (unsigned) primary_n_last_[0], (unsigned) primary_n_last_[1],
+                 (unsigned) primary_n_last_[2], (unsigned) primary_n_last_[3]);
+    }
+    if (!primary_n_initialized_)
+        bus->dali.lamp.setBrightness(address_, 254);
+    primary_n_initialized_ = true;
 }
