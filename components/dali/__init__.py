@@ -41,7 +41,7 @@ async def to_code(config: OrderedDict):
     cg.add(var.set_tx_pin(tx_pin))
 
     if config[CONF_DRIVER] == 'rmt':
-        if not CORE.using_esp_idf:
+        if not CORE.is_esp32 or CORE.target_framework != 'esp-idf':
             raise cv.Invalid('DALI RMT requires ESP-IDF')
         from esphome.components import esp32
         esp32.add_idf_component(name='espressif/dali', ref='1.1.0')
