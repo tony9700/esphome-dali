@@ -12,6 +12,7 @@ enum class DaliColorMode {
     ON_OFF,
     BRIGHTNESS,
     COLOR_TEMPERATURE,
+    RGBW_PRIMARY_N,
 };
 
 class DaliLight : public light::LightOutput, public Component {
@@ -82,6 +83,9 @@ class DaliLight : public light::LightOutput, public Component {
     optional<DaliLedDimmingCurve> brightness_curve_;
 
     bool tc_supported_;
+    bool primary_n_initialized_{false};
+    uint16_t primary_n_last_[4]{0, 0, 0, 0};
+    void write_primary_n_(light::LightState *state);
 
     // Cached initial state from DALI device queries, used by the static
     // trampoline passed to set_initial_state() (ESPHome 2026.4+ callback API).
