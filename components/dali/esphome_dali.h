@@ -49,6 +49,13 @@ public:
     }
 
     DaliMaster dali;
+    void queue_primary_n(uint8_t address, bool on, const uint16_t *levels);
+    bool is_busy() const { return active_ || !pending_.empty(); }
+    uint32_t get_queue_length() const { return active_ ? frames_.size() - frame_index_ : 0; }
+    uint32_t get_pending_updates() const { return pending_.size(); }
+    uint32_t get_updates_completed() const { return completed_; }
+    uint32_t get_updates_superseded() const { return superseded_; }
+    uint32_t get_average_update_time() const { return completed_ ? update_sum_ / completed_ : 0; }
 
     uint32_t get_tx_count() const { return tx_count_; }
     uint32_t get_rx_count() const { return rx_count_; }
@@ -66,6 +73,28 @@ public: // DaliPort
     uint8_t receiveBackwardFrame(unsigned long timeout_ms = 100) override;
 
 private:
+    struct PrimaryRequest {
+        uint8_t address;
+        bool on;
+        uint16_t levels[4];
+        uint32_t requested;
+    };
+    struct Frame { uint8_t address; uint8_t data; };
+    std::vector<PrimaryRequest> pending_;
+    std::vector<Frame> frames_;
+    PrimaryRequest current_{};
+    PrimaryRequest last_{};
+    bool last_valid_{false};
+    bool active_{false};
+    bool queue_sending_{false};
+    size_t frame_index_{0};
+    uint32_t next_frame_at_{0};
+    uint32_t completed_{0};
+    uint32_t superseded_{0};
+    uint64_t update_sum_{0};
+    void start_primary_();
+    void service_primary_();
+    void finish_active_();
     uint32_t tx_count_{0};
     uint32_t rx_count_{0};
     uint32_t rx_timeout_count_{0};
