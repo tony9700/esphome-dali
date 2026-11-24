@@ -2,6 +2,7 @@
 
 #include <esphome.h>
 #include <vector>
+#include "esphome/core/helpers.h"
 #include "dali.h"
 
 namespace esphome {
@@ -102,6 +103,7 @@ private:
     bool last_valid_{false};
     bool active_{false};
     bool queue_sending_{false};
+    esphome::HighFrequencyLoopRequester high_freq_;
     size_t frame_index_{0};
     uint32_t next_frame_at_{0};
     uint32_t inter_frame_delay_{10};
