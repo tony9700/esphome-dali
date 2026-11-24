@@ -3,6 +3,9 @@
 #include "esphome_dali.h"
 #include "esphome_dali_light.h"
 #include "port.h"
+#ifdef USE_GEAS_DALI_RMT
+#include <dali_system_components.h>
+#endif
 
 //static const char *const TAG = "dali";
 static const bool DEBUG_LOG_RXTX = false; // NOTE: Will probably trigger WDT
@@ -32,6 +35,28 @@ public:
 void DaliBusComponent::setup() {
     m_txPin->pin_mode(gpio::Flags::FLAG_OUTPUT);
     m_rxPin->pin_mode(gpio::Flags::FLAG_INPUT);
+    m_txPin->digital_write(false);
+#ifdef USE_GEAS_DALI_RMT
+    if (rmt_requested_) {
+        dali_master_config_t cfg{};
+        cfg.tx_gpio = static_cast<gpio_num_t>(rmt_tx_gpio_);
+        cfg.rx_gpio = static_cast<gpio_num_t>(rmt_rx_gpio_);
+        cfg.invert_tx = rmt_invert_tx_;
+        cfg.invert_rx = rmt_invert_rx_;
+        dali_master_rmt_config_t rmt_cfg{};
+        rmt_cfg.mem_block_symbols = 0;
+        dali_master_handle_t handle = nullptr;
+        const auto err = dali_new_master_rmt(&cfg, &rmt_cfg, &handle);
+        if (err != ESP_OK) {
+            DALI_LOGE("RMT initialization failed: %s", esp_err_to_name(err));
+            ++transport_errors_;
+            this->mark_failed();
+            return;
+        }
+        rmt_handle_ = handle;
+        DALI_LOGI("DALI RMT ready (TX invert=%d, RX invert=%d)", rmt_invert_tx_, rmt_invert_rx_);
+    }
+#endif
     DALI_LOGI("DALI bus ready");
 
     if (m_discovery) {
@@ -212,6 +237,8 @@ void DaliBusComponent::loop() {
 void DaliBusComponent::dump_config() {
     static const char *const TAG = "dali";
     ESP_LOGCONFIG(TAG, "DALI Bus:");
+    ESP_LOGCONFIG(TAG, "  Transport: %s", is_rmt_active() ? "RMT" : "bitbang");
+    if (this->is_failed()) return;
     LOG_PIN("  TX Pin: ", m_txPin);
     LOG_PIN("  RX Pin: ", m_rxPin);
     ESP_LOGCONFIG(TAG, "  Discovery: %s", m_discovery ? "enabled" : "disabled");
@@ -260,6 +287,10 @@ uint8_t DaliBusComponent::readByte() {
 void DaliBusComponent::resetBus() {
     finish_active_();
     last_valid_ = false;
+    if (is_rmt_active() || this->is_failed()) {
+        DALI_LOGW("Physical bus reset unavailable with RMT or failed transport");
+        return;
+    }
     DALI_LOGD("Resetting bus");
     m_txPin->digital_write(HIGH);
     delay(1000);
@@ -271,7 +302,28 @@ void DaliBusComponent::sendForwardFrame(uint8_t address, uint8_t data) {
         finish_active_();
         last_valid_ = false;
     }
+    transport_ok_ = false;
+    if (this->is_failed()) return;
     ++tx_count_;
+#ifdef USE_GEAS_DALI_RMT
+    if (rmt_handle_) {
+        const uint8_t bytes[2] = {address, data};
+        rmt_reply_ = -1;
+        // Primary N queue only writes. Legacy split send/receive callers
+        // need the reply captured immediately by the combined RMT API.
+        const auto err = dali_master_do_raw_transaction(
+            static_cast<dali_master_handle_t>(rmt_handle_), bytes, sizeof(bytes),
+            false, DALI_TX_TIMEOUT_MS, queue_sending_ ? nullptr : &rmt_reply_);
+        transport_ok_ = err == ESP_OK;
+        if (!transport_ok_) {
+            ++transport_errors_;
+            last_valid_ = false;
+            DALI_LOGE("RMT transaction failed: %s", esp_err_to_name(err));
+        }
+        return;
+    }
+#endif
+    transport_ok_ = true;
     if (DEBUG_LOG_RXTX) {
         DALI_LOGD("TX: %02x %02x", address, data);
         delayMicroseconds(BIT_PERIOD*8);
@@ -294,6 +346,19 @@ void DaliBusComponent::sendForwardFrame(uint8_t address, uint8_t data) {
 }
 
 uint8_t DaliBusComponent::receiveBackwardFrame(unsigned long timeout_ms) {
+    if (this->is_failed()) return 0;
+#ifdef USE_GEAS_DALI_RMT
+    if (rmt_handle_) {
+        const int reply = rmt_reply_;
+        rmt_reply_ = -1;
+        if (reply < 0 || reply > 255) {
+            ++rx_timeout_count_;
+            return 0;
+        }
+        ++rx_count_;
+        return static_cast<uint8_t>(reply);
+    }
+#endif
     uint8_t data;
 
     unsigned long startTime = millis();
@@ -331,6 +396,7 @@ uint8_t DaliBusComponent::receiveBackwardFrame(unsigned long timeout_ms) {
 }
 
 void DaliBusComponent::queue_primary_n(uint8_t address, bool on, const uint16_t *levels) {
+    if (this->is_failed()) return;
     PrimaryRequest request{};
     request.address = address;
     request.on = on;
@@ -413,6 +479,13 @@ void DaliBusComponent::service_primary_() {
     sendForwardFrame(frame.address, frame.data);
     queue_sending_ = false;
     next_frame_at_ = millis() + active_frame_delay_;
+    if (!transport_ok_) {
+        active_ = false;
+        last_valid_ = false;
+        invalidate_after_active_ = false;
+        DALI_LOGE("Primary N aborted; next request will refresh all channels");
+        return;
+    }
     if (frame_index_ == frames_.size()) {
         active_ = false;
         last_ = current_;
