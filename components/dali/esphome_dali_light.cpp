@@ -112,8 +112,8 @@ void dali::DaliLight::setup_state(light::LightState *state) {
                 }
             }
 
-            s_setup_instance = this;
-            state->set_initial_state(initial_state_trampoline);
+            // TODO: Restore queried DALI state using ESPHome 2026.11 API.
+            // Temporarily disabled for broadcast compatibility testing.
         }
         else {
             ESP_LOGW(TAG, "DALI device at addr %.2x not found!", address_);
