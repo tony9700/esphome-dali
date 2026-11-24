@@ -353,6 +353,7 @@ void DaliBusComponent::start_primary_() {
     pending_.erase(pending_.begin());
     frames_.clear();
     frame_index_ = 0;
+    active_frames_saved_ = 0;
     const uint8_t arc = current_.address << 1;
     const uint8_t cmd = arc | 1;
     const bool initialized = last_valid_ && last_.address == current_.address && last_.on;
@@ -363,11 +364,27 @@ void DaliBusComponent::start_primary_() {
         append(arc, 0);
     } else {
         bool changed = false;
+        // Experimental: only reuse a known DTR byte within this transaction.
+        // Never assume DTR values persist between requests or external commands.
+        int dtr0 = -1;
+        int dtr1 = -1;
         for (uint8_t channel = 0; channel < 4; ++channel) {
             const uint16_t level = current_.levels[channel];
             if (initialized && last_.levels[channel] == level) continue;
-            append(0xA3, level & 0xFF);
-            append(0xC3, level >> 8);
+            const uint8_t low = level & 0xFF;
+            const uint8_t high = level >> 8;
+            if (!dtr_optimization_ || dtr0 != low) {
+                append(0xA3, low);
+                dtr0 = low;
+            } else {
+                ++active_frames_saved_;
+            }
+            if (!dtr_optimization_ || dtr1 != high) {
+                append(0xC3, high);
+                dtr1 = high;
+            } else {
+                ++active_frames_saved_;
+            }
             append(0xC5, channel);
             append(0xC1, 0x08);
             append(cmd, 0xEA);
@@ -399,7 +416,10 @@ void DaliBusComponent::service_primary_() {
     if (frame_index_ == frames_.size()) {
         active_ = false;
         last_ = current_;
-        last_valid_ = true;
+        last_valid_ = !invalidate_after_active_;
+        invalidate_after_active_ = false;
+        last_frames_saved_ = active_frames_saved_;
+        frames_saved_ += active_frames_saved_;
         const uint32_t finished = millis();
         const uint32_t elapsed = finished - current_.requested;
         last_frame_count_ = frames_.size();
@@ -408,10 +428,11 @@ void DaliBusComponent::service_primary_() {
         record_update_time(elapsed);
         ++completed_;
         update_sum_ += elapsed;
-        DALI_LOGI("Primary N complete: %lu ms, %u frames, wait=%lu ms, tx=%lu ms, gap=%lu ms",
+        DALI_LOGI("Primary N complete: %lu ms, %u frames, wait=%lu ms, tx=%lu ms, gap=%lu ms, saved=%lu frames",
                   static_cast<unsigned long>(elapsed), static_cast<unsigned>(frames_.size()),
                   static_cast<unsigned long>(last_queue_wait_), static_cast<unsigned long>(last_tx_duration_),
-                  static_cast<unsigned long>(active_frame_delay_));
+                  static_cast<unsigned long>(active_frame_delay_),
+                  static_cast<unsigned long>(last_frames_saved_));
     }
 }
 
