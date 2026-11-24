@@ -159,10 +159,7 @@ void DaliBusComponent::setup() {
         }
     }
 
-    // If no dynamic lights were discovered, disable loop() to avoid unnecessary CPU cycles.
-    if (m_dynamic_lights.empty()) {
-        this->disable_loop();
-    }
+    // Keep the bus loop enabled for queued Primary N updates.
 }
 
 void DaliBusComponent::create_light_component(short_addr_t short_addr, uint32_t long_addr) {
@@ -208,6 +205,7 @@ void DaliBusComponent::loop() {
     for (auto* light : m_dynamic_lights) {
         light->loop();
     }
+    service_primary_();
 }
 
 void DaliBusComponent::dump_config() {
@@ -259,6 +257,8 @@ uint8_t DaliBusComponent::readByte() {
 }
 
 void DaliBusComponent::resetBus() {
+    finish_active_();
+    last_valid_ = false;
     DALI_LOGD("Resetting bus");
     m_txPin->digital_write(HIGH);
     delay(1000);
@@ -266,6 +266,10 @@ void DaliBusComponent::resetBus() {
 }
 
 void DaliBusComponent::sendForwardFrame(uint8_t address, uint8_t data) {
+    if (!queue_sending_) {
+        finish_active_();
+        last_valid_ = false;
+    }
     ++tx_count_;
     if (DEBUG_LOG_RXTX) {
         DALI_LOGD("TX: %02x %02x", address, data);
@@ -323,4 +327,89 @@ uint8_t DaliBusComponent::receiveBackwardFrame(unsigned long timeout_ms) {
     delayMicroseconds(BIT_PERIOD*8); 
     ++rx_count_;
     return data;
+}
+
+void DaliBusComponent::queue_primary_n(uint8_t address, bool on, const uint16_t *levels) {
+    PrimaryRequest request{};
+    request.address = address;
+    request.on = on;
+    request.requested = millis();
+    for (uint8_t i = 0; i < 4; ++i) request.levels[i] = levels[i];
+    for (auto &pending : pending_) {
+        if (pending.address == address) {
+            pending = request;
+            ++superseded_;
+            return;
+        }
+    }
+    pending_.push_back(request);
+}
+
+void DaliBusComponent::start_primary_() {
+    if (pending_.empty()) return;
+    current_ = pending_.front();
+    pending_.erase(pending_.begin());
+    frames_.clear();
+    frame_index_ = 0;
+    const uint8_t arc = current_.address << 1;
+    const uint8_t cmd = arc | 1;
+    const bool initialized = last_valid_ && last_.address == current_.address && last_.on;
+    auto append = [&](uint8_t address, uint8_t data) {
+        frames_.push_back({address, data});
+    };
+    if (!current_.on) {
+        append(arc, 0);
+    } else {
+        bool changed = false;
+        for (uint8_t channel = 0; channel < 4; ++channel) {
+            const uint16_t level = current_.levels[channel];
+            if (initialized && last_.levels[channel] == level) continue;
+            append(0xA3, level & 0xFF);
+            append(0xC3, level >> 8);
+            append(0xC5, channel);
+            append(0xC1, 0x08);
+            append(cmd, 0xEA);
+            changed = true;
+        }
+        if (changed) {
+            append(0xC1, 0x08);
+            append(cmd, 0xE2);
+        }
+        if (!initialized) append(arc, 254);
+    }
+    if (frames_.empty()) return;
+    active_ = true;
+}
+
+void DaliBusComponent::service_primary_() {
+    if (static_cast<int32_t>(millis() - next_frame_at_) < 0) return;
+    if (!active_) start_primary_();
+    if (!active_) return;
+    const Frame frame = frames_[frame_index_++];
+    queue_sending_ = true;
+    sendForwardFrame(frame.address, frame.data);
+    queue_sending_ = false;
+    next_frame_at_ = millis() + 10;
+    if (frame_index_ == frames_.size()) {
+        active_ = false;
+        last_ = current_;
+        last_valid_ = true;
+        const uint32_t elapsed = millis() - current_.requested;
+        record_update_time(elapsed);
+        ++completed_;
+        update_sum_ += elapsed;
+        DALI_LOGI("Primary N complete: %lu ms, %u frames",
+                  static_cast<unsigned long>(elapsed), static_cast<unsigned>(frames_.size()));
+    }
+}
+
+void DaliBusComponent::finish_active_() {
+    while (active_) {
+        if (static_cast<int32_t>(millis() - next_frame_at_) < 0) {
+            delay(1);
+        } else {
+            service_primary_();
+        }
+    }
+    while (static_cast<int32_t>(millis() - next_frame_at_) < 0) delay(1);
 }
