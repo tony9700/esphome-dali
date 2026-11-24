@@ -378,6 +378,10 @@ void DaliBusComponent::start_primary_() {
         if (!initialized) append(arc, 254);
     }
     if (frames_.empty()) return;
+    active_frame_delay_ = inter_frame_delay_;
+    if (frames_.size() > peak_queue_length_) peak_queue_length_ = frames_.size();
+    tx_started_ = millis();
+    active_queue_wait_ = tx_started_ - current_.requested;
     active_ = true;
 }
 
@@ -389,17 +393,23 @@ void DaliBusComponent::service_primary_() {
     queue_sending_ = true;
     sendForwardFrame(frame.address, frame.data);
     queue_sending_ = false;
-    next_frame_at_ = millis() + 10;
+    next_frame_at_ = millis() + active_frame_delay_;
     if (frame_index_ == frames_.size()) {
         active_ = false;
         last_ = current_;
         last_valid_ = true;
-        const uint32_t elapsed = millis() - current_.requested;
+        const uint32_t finished = millis();
+        const uint32_t elapsed = finished - current_.requested;
+        last_frame_count_ = frames_.size();
+        last_queue_wait_ = active_queue_wait_;
+        last_tx_duration_ = finished - tx_started_;
         record_update_time(elapsed);
         ++completed_;
         update_sum_ += elapsed;
-        DALI_LOGI("Primary N complete: %lu ms, %u frames",
-                  static_cast<unsigned long>(elapsed), static_cast<unsigned>(frames_.size()));
+        DALI_LOGI("Primary N complete: %lu ms, %u frames, wait=%lu ms, tx=%lu ms, gap=%lu ms",
+                  static_cast<unsigned long>(elapsed), static_cast<unsigned>(frames_.size()),
+                  static_cast<unsigned long>(last_queue_wait_), static_cast<unsigned long>(last_tx_duration_),
+                  static_cast<unsigned long>(active_frame_delay_));
     }
 }
 
