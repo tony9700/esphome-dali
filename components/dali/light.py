@@ -99,7 +99,8 @@ def validate_fade_rate(value):
     raise cv.Invalid(f"Fade rate must be one of {ALLOWABLE_FADE_RATES}")
 
 
-CONFIG_SCHEMA = light.LIGHT_SCHEMA.extend({
+# DALI performs its own fading and logarithmic arc-power mapping.
+CONFIG_SCHEMA = light.BRIGHTNESS_ONLY_LIGHT_SCHEMA.extend({
     cv.GenerateID(CONF_OUTPUT_ID): cv.declare_id(DaliLight),
 
     cv.Optional(CONF_COLD_WHITE_COLOR_TEMPERATURE, default='10000K'): cv.color_temperature,
