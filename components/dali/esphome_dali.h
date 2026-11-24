@@ -69,9 +69,20 @@ public:
         tx_count_ = rx_count_ = rx_timeout_count_ = 0;
         update_time_ = max_update_time_ = completed_ = superseded_ = 0;
         update_sum_ = 0;
+        frames_saved_ = last_frames_saved_ = 0;
         peak_queue_length_ = last_frame_count_ = last_queue_wait_ = last_tx_duration_ = 0;
         return true;
     }
+
+    void set_dtr_optimization(bool enabled) {
+        dtr_optimization_ = enabled;
+        // Force a full refresh on the next request when changing test mode.
+        last_valid_ = false;
+        if (active_) invalidate_after_active_ = true;
+    }
+    bool get_dtr_optimization() const { return dtr_optimization_; }
+    uint32_t get_frames_saved() const { return frames_saved_; }
+    uint32_t get_last_frames_saved() const { return last_frames_saved_; }
 
     uint32_t get_tx_count() const { return tx_count_; }
     uint32_t get_rx_count() const { return rx_count_; }
@@ -103,6 +114,11 @@ private:
     bool last_valid_{false};
     bool active_{false};
     bool queue_sending_{false};
+    bool dtr_optimization_{false};
+    bool invalidate_after_active_{false};
+    uint32_t frames_saved_{0};
+    uint32_t last_frames_saved_{0};
+    uint32_t active_frames_saved_{0};
     esphome::HighFrequencyLoopRequester high_freq_;
     size_t frame_index_{0};
     uint32_t next_frame_at_{0};
